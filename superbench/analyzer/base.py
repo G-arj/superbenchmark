@@ -95,7 +95,7 @@ class RuleBase():
         """
         # read raw data from file
         self._raw_data_df = file_handler.read_raw_data(raw_data_file)
-        # re-organize metrics by benchamrk namses
+        # re-organize metrics by benchmark names
         self._benchmark_metrics_dict = self._get_metrics_by_benchmarks(list(self._raw_data_df.columns))
         # check raw data whether empty
         if len(self._raw_data_df) == 0:

@@ -94,7 +94,7 @@ class ResultSummary(RuleBase):
         return summary
 
     def _merge_summary(self, summary):
-        """Merge summary of mutliple rules into DataFrame.
+        """Merge summary of multiple rules into DataFrame.
 
         Args:
             summary (dict): summary dict, the keys are categories, the values are summary lines for the category
