@@ -10,6 +10,8 @@ import json
 import jsonlines
 import pandas as pd
 import yaml
+from openpyxl.styles import Alignment
+import markdown
 
 from superbench.common.utils import logger
 
@@ -204,3 +206,148 @@ def output_json_data_not_accept(data_not_accept_df, output_path):
                 f.write(json_str + '\n')
     except Exception as e:
         logger.error('DataDiagnosis: output json data failed, msg: {}'.format(str(e)))
+
+
+def merge_column_in_excel(ws, row, column):
+    """Merge cells in the selected index of column with continuous same contents.
+
+    Args:
+        ws (worksheet): the worksheet of the excel to process
+        row (int): the max row index to merge
+        column (int): the index of the column to merge
+    """
+    dict_from = {}
+    aligncenter = Alignment(horizontal='center', vertical='center')
+    # record continuous row index (start, end) with the same content
+    for row_index in range(1, row + 1):
+        value = str(ws.cell(row_index, column).value)
+        if value not in dict_from:
+            dict_from[value] = [row_index, row_index]
+        else:
+            dict_from[value][1] = dict_from[value][1] + 1
+    # merge the cells
+    for value in dict_from.values():
+        if value[0] != value[1]:
+            ws.merge_cells(start_row=value[0], start_column=column, end_row=value[1], end_column=column)
+    # align center for merged cells
+    for i in range(1, row + 1):
+        ws.cell(row=i, column=column).alignment = aligncenter
+
+
+def output_summary_in_excel(raw_data_df, summary, output_path):
+    """Output result summary in excel foramt.
+
+    Args:
+        raw_data_df (DataFrame): the DataFrame of raw data df
+        summary (DataFrame): the DataFrame of summary
+        output_path (str): the path of output file
+    """
+    try:
+        writer = pd.ExcelWriter(output_path, engine='openpyxl')
+        # check whether writer is valiad
+        if not isinstance(writer, pd.ExcelWriter):
+            logger.error('ResultSummary: excel_data_output - invalid file path.')
+            return
+        # output the raw data in 'Raw Data' sheet
+        output_excel_raw_data(writer, raw_data_df, 'Raw Data')
+        # output the result summary in 'Summary' sheet
+        if isinstance(summary, pd.DataFrame) and not summary.empty:
+            summary.to_excel(writer, 'Summary', index=False, header=False)
+            worksheet = writer.sheets['Summary']
+            row = worksheet.max_row
+            # merge cells in 'category' column with the same category
+            merge_column_in_excel(worksheet, row, 1)
+        else:
+            logger.error('ResultSummary: excel_data_output - summary is empty.')
+        writer.save()
+    except Exception as e:
+        logger.error('ResultSummary: excel_data_output - {}'.format(str(e)))
+
+
+def gen_md_table(data, header):
+    """Generate table text in markdown format.
+
+    | header[0] | header[1] |
+    |     ----  | ----      |
+    |     data  | data      |
+    |     data  | data      |
+
+    Args:
+        data (list): the data in table
+        header (list): the header of table
+
+    Returns:
+        list: lines of markdown table
+    """
+    lines = []
+    max_width = len(max(data, key=len))
+    header[len(header):max_width] = [' ' for i in range(max_width - len(header))]
+    align = ['---' for i in range(max_width)]
+    lines.append('| {} |\n'.format(' | '.join(header)))
+    lines.append('| {} |\n'.format(' | '.join(align)))
+    for line in data:
+        full_line = [' ' for i in range(max_width)]
+        full_line[0:len(line)] = [str(line[i]) for i in range(len(line))]
+        lines.append('| {} |\n'.format(' | '.join(full_line)))
+    return lines
+
+
+def gen_md_lines(summary):
+    """Generate text in markdown foramt.
+
+    Use category to be the 2nd-header, use tables to show the data
+
+    Args:
+        summary (dict): summary dict, the keys are categories, the values are summary lines for the category
+
+    Returns:
+        list: lines in markdown format
+    """
+    lines = []
+    for category in summary:
+        lines.append('## {}\n'.format(category))
+        summary_df = pd.DataFrame(summary[category])
+        summary_lines = summary_df.drop(columns=0, axis=1).values.tolist()
+        header = ['metric', 'statistics', 'values']
+        table_lines = gen_md_table(summary_lines, header)
+        lines.extend(table_lines)
+        lines.append('\n')
+    return lines
+
+
+def output_summary_in_md(summary, output_path):
+    """Output summary in markdown format.
+
+    Args:
+        summary (dict): summary dict, the keys are categories, the values are summary lines for the category
+        output_path (str): the path of output file
+    """
+    try:
+        lines = gen_md_lines(summary)
+        if len(lines) == 0:
+            logger.error('ResultSummary: md_data_output failed')
+            return
+        with open(output_path, 'w') as f:
+            f.writelines(lines)
+    except Exception as e:
+        logger.error('ResultSummary: md_data_output - {}'.format(str(e)))
+
+
+def output_summary_in_html(summary, output_path):
+    """Output summary in html format.
+
+    Args:
+        summary (dict): summary dict, the keys are categories, the values are summary lines for the category
+        output_path (str): the path of output file
+    """
+    try:
+        lines = gen_md_lines(summary)
+        if len(lines) == 0:
+            logger.error('ResultSummary: html_data_output failed')
+            return
+        lines = ''.join(lines)
+        html_str = markdown.markdown(lines, extensions=['markdown.extensions.tables'])
+        with open(output_path, 'w') as f:
+            f.writelines(html_str)
+    except Exception as e:
+        logger.error('ResultSummary: html_data_output - {}'.format(str(e)))
